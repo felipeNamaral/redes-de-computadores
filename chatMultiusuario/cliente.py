@@ -16,6 +16,7 @@ def envia_msg(conexao):
     while True:
         try:
             mensagem = input()
+            print('\033[F\033[K', end='')
             conexao.send(mensagem.encode())
 
             if mensagem == ":quit":

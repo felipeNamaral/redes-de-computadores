@@ -54,7 +54,10 @@ def envia_msg(conexao):
                 if mensagem_bruta.startswith(":nome "):
                     novo_nome = mensagem_bruta.split(":nome ", 1)[1]
                     nome_cliente = novo_nome
+                    
                     print(f"Cliente mudou de nome para {novo_nome}.")
+                    conexao.send(f"Seu nome foi alterado para {novo_nome}".encode())
+
         
                 elif mensagem_bruta.startswith(":quit"):
                     print(f"Cliente {nome_cliente} desconectado.")
@@ -81,6 +84,9 @@ print("Cliente conectado:", endereco)
 
 msg_conexao = f'{datetime.now().strftime("%H:%M")}: CONECTADO!!'
 conexao.send(msg_conexao.encode())
+
+msg_comandos = f'\n\n=========================\nComandos disponíveis:\n:nome <novo_nome> - Alterar nome do cliente\n:quit - Desconectar do servidor\n========================='
+conexao.send(msg_comandos.encode())
 
 thread_1 = threading.Thread(target=recebe_msg, args=(conexao,))
 thread_2 = threading.Thread(target=envia_msg, args=(conexao,))
