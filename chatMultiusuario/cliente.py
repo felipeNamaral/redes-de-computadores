@@ -17,6 +17,11 @@ def envia_msg(conexao):
         try:
             mensagem = input()
             conexao.send(mensagem.encode())
+
+            if mensagem == ":quit":
+                print("Desconectando do servidor...")
+                break
+
         except (EOFError, ConnectionError, OSError):
             break
 
@@ -25,13 +30,13 @@ def recebe_msg(conexao):
     while True:
         try:
             mensagem = conexao.recv(1024).decode()
+            if not mensagem:
+                break
+
+            print(mensagem)
+
         except (ConnectionError, OSError):
             break
-
-        if not mensagem:
-            break
-
-        print(mensagem)
 
 
 cliente = None
