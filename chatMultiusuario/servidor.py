@@ -73,7 +73,7 @@ def envia_msg(conexao):
             tamanho_memoria = len(memoria)
                 
 
-
+ 
 servidor = cria_socket()
 servidor.listen(1)
 print("Servidor aguardando conexão...")

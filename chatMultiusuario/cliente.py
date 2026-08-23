@@ -26,7 +26,7 @@ def envia_msg(conexao):
         except (EOFError, ConnectionError, OSError):
             break
 
-
+ 
 def recebe_msg(conexao):
     while True:
         try:
