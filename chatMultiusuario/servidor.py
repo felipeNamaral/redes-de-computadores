@@ -2,9 +2,12 @@ import socket
 import threading
 from datetime import datetime
 import time
+import argparse
+import queue
 
-memoria  = []
-nome_cliente = ""
+
+clientes = []
+
 
 class dados:
     def __init__(self,data, nome, mensagem):
@@ -18,7 +21,8 @@ def cria_socket():
     return servidor
 
 
-def recebe_msg(conexao):
+def recebe_msg(cliente):
+    conexao = cliente["conexao"]
     while True:
         try:
             mensagem = conexao.recv(1024).decode()
@@ -27,69 +31,129 @@ def recebe_msg(conexao):
 
             data = datetime.now().strftime("%H:%M")
             dados_rec = dados(data, "", mensagem)
-            memoria.append(dados_rec)
+            cliente["memoria"].put(dados_rec)
         
         except(ConnectionError, OSError):
+
             break
 
-        if not mensagem:
-            break
+    cliente["encerrado"].set()
+    try:
+        clientes.remove(cliente)
+    except ValueError:
+        pass
+
+    conexao.close()
 
 
-def envia_msg(conexao):
-    global nome_cliente
-    tamanho_memoria = len(memoria)
+def envia_msg(cliente):
+    conexao = cliente["conexao"]
+
+
+    
     ultimo_horario = time.time()
-    while True:
+    while not cliente["encerrado"].is_set():
         if (time.time() - ultimo_horario) >= 60:
             horario_atual = datetime.now().strftime("%H:%M")
             conexao.send(horario_atual.encode())
             ultimo_horario = time.time()
 
-        if len(memoria) > tamanho_memoria:
-            mensagem_bruta = memoria[-1].mensagem
-            horario_msg = memoria[-1].data
+        try:
+            dados_rec = cliente["memoria"].get(timeout=1)
+        except queue.Empty:
+            continue
+        
+        mensagem_bruta = dados_rec.mensagem
+        horario_msg = dados_rec.data
 
-            if mensagem_bruta.startswith(":"):
-                if mensagem_bruta.startswith(":nome "):
-                    novo_nome = mensagem_bruta.split(":nome ", 1)[1]
-                    nome_cliente = novo_nome
+        if mensagem_bruta.startswith(":"):
+            if mensagem_bruta.startswith(":nome "):
+                novo_nome = mensagem_bruta.split(":nome ", 1)[1]
+                cliente["nome"] = novo_nome
                     
-                    print(f"Cliente mudou de nome para {novo_nome}.")
-                    conexao.send(f"Seu nome foi alterado para {novo_nome}".encode())
+                print(f"Cliente mudou de nome para {novo_nome}.")
+                conexao.sendall(f"Seu nome foi alterado para {novo_nome}".encode())
 
         
-                elif mensagem_bruta.startswith(":quit"):
-                    print(f"Cliente {nome_cliente} desconectado.")
-                    conexao.close()
-                    break
+            elif mensagem_bruta == ":quit":
+                print(f"Cliente {cliente['nome']} desconectado.")
+                cliente["encerrado"].set()
+                try:
+                    clientes.remove(cliente)
+                except ValueError:
+                    pass
 
-            else:
-                eco = f"Você digitou: {mensagem_bruta}"
-                msg_chat = f"{horario_msg} <{nome_cliente}>: {mensagem_bruta}"
+                try:
+                    conexao.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
 
-                conexao.send(eco.encode())
+                conexao.close()
+                break
 
-            tamanho_memoria = len(memoria)
+        else:
+            eco = f"Você digitou: {mensagem_bruta}"
+            msg_chat = f"{horario_msg} <{cliente['nome']}>: {mensagem_bruta}"
+
+            conexao.sendall(eco.encode())
+
+           
                 
+
+
+parser = argparse.ArgumentParser(description="Servidor")
+parser.add_argument(
+    "maximoDeconexoes",
+    type=int,
+    help="Número máximo de conexoes"
+)
+
+argumentos = parser.parse_args()
+maximoDeconexoes = argumentos.maximoDeconexoes
+
+
+if maximoDeconexoes < 1:
+    parser.error("O número máximo de conexões deve ser maior que zero")
+
+
 
  
 servidor = cria_socket()
 servidor.listen(1)
-print("Servidor aguardando conexão...")
-conexao, endereco = servidor.accept()
+print("Servidor aguardando conexões...")
 
-nome_cliente = f"{endereco[0]}:{endereco[1]}"
-print("Cliente conectado:", endereco)
+while True:
+    conexao, endereco = servidor.accept()
+    if(len(clientes) >= maximoDeconexoes):
+            msg=f'servidor lotado!!'
+            conexao.send(msg.encode())
+            conexao.close()
+            continue
 
-msg_conexao = f'{datetime.now().strftime("%H:%M")}: CONECTADO!!'
-conexao.send(msg_conexao.encode())
 
-msg_comandos = f'\n\n=========================\nComandos disponíveis:\n:nome <novo_nome> - Alterar nome do cliente\n:quit - Desconectar do servidor\n========================='
-conexao.send(msg_comandos.encode())
+    cliente={
+        "conexao": conexao,
+        "endereco": endereco,
+        "nome": f"{endereco[0]}:{endereco[1]}",
+        "memoria":queue.Queue(),
+        "encerrado": threading.Event()
+    }        
 
-thread_1 = threading.Thread(target=recebe_msg, args=(conexao,))
-thread_2 = threading.Thread(target=envia_msg, args=(conexao,))
-thread_1.start()
-thread_2.start()
+    clientes.append(cliente)
+
+    
+    print("Cliente conectado:", endereco)
+
+    msg_conexao = f'{datetime.now().strftime("%H:%M")}: CONECTADO!!'
+    conexao.send(msg_conexao.encode())
+
+    msg_comandos = f'\n\n=========================\nComandos disponíveis:\n:nome <novo_nome> - Alterar nome do cliente\n:quit - Desconectar do servidor\n========================='
+    conexao.send(msg_comandos.encode())
+
+
+    thread_1 = threading.Thread(target=recebe_msg, args=(cliente,))
+    thread_2 = threading.Thread(target=envia_msg, args=(cliente,))
+    cliente["threads"] = [thread_1, thread_2]
+    thread_1.start()
+    thread_2.start()
 
