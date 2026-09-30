@@ -15,7 +15,7 @@ class dados:
         self.nome = nome
         self.mensagem = mensagem
 
-def cria_socket(): # Permite que os clientes encontrem e se liguem ao sistema através da rede de porta 5000
+def cria_socket(): # Permite que os clientes encontrem e se liguem ao sistema através da rede de porta 5000.
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     servidor.bind(('0.0.0.0', 5000))
     return servidor
