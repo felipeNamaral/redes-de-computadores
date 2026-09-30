@@ -24,10 +24,6 @@ def envia_msg(conexao):
             print('\033[F\033[K', end='')
             enviar_linha(conexao, mensagem)
 
-            if mensagem == ":quit":
-                print("Desconectando do servidor...")
-                break
-
         except (EOFError, ConnectionError, OSError):
             # Libera a thread de recebimento se o teclado ou o envio falhar.
             try:
