@@ -17,7 +17,13 @@ class dados:
 
 def cria_socket(): # Permite que os clientes encontrem e se liguem ao sistema através da rede de porta 5000.
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    servidor.bind(('0.0.0.0', 5000))
+    try:
+         servidor.bind(('0.0.0.0', 5000))
+         servidor.listen()
+    except OSError:
+        servidor.close()
+        raise
+
     return servidor
 
 def enviar_para(sessao, texto): # Executa os envios de forma sequencial e segura com lock_envio.
@@ -83,21 +89,38 @@ if maximoDeconexoes < 1:
 
 
 
- 
-servidor = cria_socket()
-servidor.listen(1)
+try:
+    servidor = cria_socket()
+except OSError as erro:
+    print(f"Não foi possível iniciar o servidor: {erro}")
+    raise SystemExit(1)
+
+
 print("Servidor aguardando conexões...")
 
 while True:
-    conexao, endereco = servidor.accept()
 
-    with registro_lock: # Evita race conditions.
-        if(len(clientes) >= maximoDeconexoes):
-            msg=f'servidor lotado!!\n'
-            conexao.send(msg.encode())
+    try:
+        conexao, endereco = servidor.accept()
+    except OSError as erro:
+        print(f"Erro ao aceitar conexão: {erro}")
+        continue 
+
+
+    with registro_lock:
+        lotado = len(clientes) >= maximoDeconexoes    
+    if(lotado):
+        msg=f'servidor lotado!!\n'
+        try:
+            conexao.sendall(msg.encode())
+        except OSError as erro:
+            print(f"Erro ao enviar mensagem de servidor lotado para o cliente {endereco}: {erro}")
+        finally:
             conexao.close()
-            continue
+        continue
+                
 
+    with registro_lock:  # Evita race conditions.
 
         cliente={
             "conexao": conexao,
@@ -113,22 +136,29 @@ while True:
     
     print("Cliente conectado:", endereco)
 
-    msg_conexao = f'{datetime.now().strftime("%H:%M")}: CONECTADO!!\n'
-    conexao.send(msg_conexao.encode())
+    try:
+        with cliente["lock_envio"]:
+            msg_conexao = f'{datetime.now().strftime("%H:%M")}: CONECTADO!!\n'
+            conexao.sendall(msg_conexao.encode())
 
-    msg_comandos = f'\n=========================\nComandos disponíveis:\n:nome <novo_nome> - Alterar nome do cliente\n:quit - Desconectar do servidor\n=========================\n'
-    conexao.send(msg_comandos.encode())
+            msg_comandos = f'\n=========================\nComandos disponíveis:\n:nome <novo_nome> - Alterar nome do cliente\n:quit - Desconectar do servidor\n=========================\n'
+            conexao.sendall(msg_comandos.encode())
+    except OSError as erro:
+        print(f"Erro ao enviar mensagens iniciais para o cliente {endereco}: {erro}")
+        encerrar_cliente(cliente)
+        continue
+
+
 
 
     thread_1 = threading.Thread( #Fica dedicada exclusivamente a escutar o socket do cliente com a função recebe_msg, que lê as mensagens enviadas pelo cliente e as coloca na fila de memória.
-        target=recebe_msg, 
-        args=(cliente,)
-        )
-    
+            target=recebe_msg, 
+            args=(cliente,)
+            )     
     thread_2 = threading.Thread( # Fica responsável por tirar as mensagens da fila e decidir o que fazer com elas (enviar aos outros, processar comandos ou enviar avisos de horário).
-        target=protocolo.processar_cliente, 
-        args=(cliente, enviar_para, listar_sessoes, encerrar_cliente)
-    )
+            target=protocolo.processar_cliente, 
+            args=(cliente, enviar_para, listar_sessoes, encerrar_cliente)
+        )
     
     cliente["threads"] = [thread_1, thread_2]
     thread_1.start()
