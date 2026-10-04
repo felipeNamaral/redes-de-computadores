@@ -5,6 +5,7 @@ import time
 import argparse
 import queue
 import protocolo # Importar protocolo.py criado
+from transporte import receber_linhas
 
 clientes = []
 registro_lock = threading.Lock() # Lock para proteger a lista global de clientes
@@ -56,21 +57,15 @@ def encerrar_cliente(sessao):
 
 def recebe_msg(cliente):
     conexao = cliente["conexao"]
-    while True:
-        try:
-            mensagem = conexao.recv(1024).decode()
-            if not mensagem:
-                break
-
+    try:
+        for mensagem in receber_linhas(conexao):
             data = datetime.now().strftime("%H:%M")
             dados_rec = dados(data, "", mensagem)
             cliente["memoria"].put(dados_rec)
-        
-        except(ConnectionError, OSError):
-
-            break
-
-    encerrar_cliente(cliente)       
+    except (OSError, UnicodeDecodeError) as erro:
+        print(f"Erro ao receber mensagem de {cliente['nome']}: {erro}")
+    finally:
+        encerrar_cliente(cliente)
 
 
 parser = argparse.ArgumentParser(description="Servidor")
