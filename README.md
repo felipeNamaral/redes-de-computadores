@@ -2,7 +2,7 @@
 
 Chat multiusuário desenvolvido em Python, utilizando sockets TCP e threads para comunicação bidirecional assíncrona entre clientes e servidor.
 
-Documentação preparada para a versão final das três fases. A descrição da entrega inclui o comportamento previsto para a integração da Fase 3; a validação do código deve ser realizada separadamente.
+O projeto integra as três fases: comunicação cliente/servidor, atendimento simultâneo de múltiplos clientes e tratamento de falhas de conexão.
 
 ## Integrantes
 
@@ -48,7 +48,7 @@ Os demais participantes recebem a identificação do remetente, o horário e a m
 Ana (14:30): Olá, pessoal!
 ```
 
-O comportamento previsto para a entrega inclui o envio de data e horário a cada minuto, mesmo quando não há mensagens na sala.
+O servidor envia o horário no formato `HH:MM` a cada 60 segundos para cada cliente conectado, mesmo quando não há mensagens na sala. Após a confirmação de conexão, também apresenta os comandos disponíveis. As respostas usam cores ANSI em terminais compatíveis; os exemplos acima omitem os códigos de cor.
 
 ## Fase 2 — Atendimento de múltiplos clientes
 
@@ -86,9 +86,11 @@ O servidor trata erros na inicialização do socket, associação à porta, escu
 
 O registro compartilhado é protegido por `registro_lock`. Cada sessão possui seu próprio `lock_envio`, para serializar mensagens destinadas àquela conexão. A fila de entrada é uma `queue.Queue`, apropriada para comunicação entre threads.
 
-### Critérios da entrega integrada
+### Transporte e encerramento
 
-A versão final deve preservar mensagens completas mesmo quando o TCP fragmenta ou agrupa os dados, liberar recursos nas falhas, manter a independência das sessões e continuar aceitando clientes após desconexões. O critério de qualidade da Fase 3 é não apresentar exceções não tratadas ou warnings do interpretador/runtime durante o uso.
+As mensagens são codificadas em UTF-8 e delimitadas por quebra de linha (`\n`). O módulo de transporte acumula os bytes recebidos até completar uma linha, permitindo reconstruir mensagens fragmentadas ou agrupadas pelo TCP, inclusive quando um caractere acentuado é dividido entre leituras. Dados sem a quebra de linha final não são entregues ao protocolo.
+
+O timeout de recebimento mantém a sessão aberta durante períodos de ociosidade. EOF e falhas de socket encerram o recebimento e acionam a limpeza da sessão. Ao pressionar `Ctrl+C` no servidor, as conexões ativas e o socket de escuta são fechados; no cliente, o socket também é liberado ao interromper a execução.
 
 ## Estrutura do projeto
 
@@ -98,6 +100,7 @@ A versão final deve preservar mensagens completas mesmo quando o TCP fragmenta 
 | `chatMultiusuario/cliente.py` | Entrada pelo teclado, envio e exibição das respostas. |
 | `chatMultiusuario/protocolo.py` | Comandos, nomes, eco, broadcast e avisos periódicos. |
 | `chatMultiusuario/transporte.py` | Envio de linhas UTF-8 e reconstrução de mensagens delimitadas por quebra de linha. |
+| `tests/test_chat.py` | Testes de integração para lotação, alteração de nome, eco, broadcast e desconexão. |
 
 ## Requisitos de execução
 
@@ -156,3 +159,20 @@ Para sair de um cliente:
 ```
 
 A saída de um participante libera sua vaga e mantém os demais na sala. O servidor permanece em execução para receber novas conexões.
+
+Para encerrar o servidor, pressione `Ctrl+C` no terminal em que ele está sendo executado.
+
+## Testes
+
+Os testes de integração utilizam `pytest` e iniciam um servidor local com limite de dois clientes. Execute os comandos na raiz do projeto, com a porta TCP 5000 livre e sem outro servidor do chat em execução:
+
+```console
+python -m pip install pytest
+python -m pytest -q
+```
+
+A suíte contém quatro testes: limite de conexões, alteração de nome, broadcast e eco, e desconexão por `:quit`.
+
+**Observação sobre a suíte atual:** a asserção do eco compara `Voce digitou: Ola pessoal` como texto contínuo, mas a resposta inclui um código ANSI entre o prefixo e a mensagem. Essa comparação precisa desconsiderar os códigos de cor para validar a resposta exibida no terminal.
+
+Para uma conferência manual, conecte clientes até atingir o limite, tente uma conexão excedente, altere nomes e troque mensagens. Em seguida, desconecte um cliente com `:quit` e conecte outro para verificar a liberação da vaga. Mantenha uma sessão ociosa por mais de um minuto para observar o aviso de horário e encerre o servidor com `Ctrl+C` para conferir a saída dos clientes.
